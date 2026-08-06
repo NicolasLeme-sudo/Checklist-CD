@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Checklist de Setores</title>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+<style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F3F4F8;color:#1A1D29;min-height:100vh}
+    input,select,textarea,button{font-family:inherit;font-size:14px;outline:none}
+    input,select,textarea{background:#fff;color:#1A1D29;border:0.5px solid #D3D6E0;border-radius:8px;padding:8px 12px;width:100%}
+    input:focus,select:focus,textarea:focus{border-color:#3454D1}
+    .card-hover{transition:box-shadow .2s,transform .2s}
+    .card-hover:hover{box-shadow:0 10px 24px rgba(20,25,60,.12);transform:translateY(-2px)}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#D3D6E0;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+/* =====================================================================
+   CONFIGURAÇÃO — SUBSTITUA AQUI DEPOIS DE CRIAR SEU PROJETO NO SUPABASE
+   ===================================================================== */
+const SUPABASE_URL='https://izqmncxmxkvmsuutbsnl.supabase.co';
+const SUPABASE_KEY='sb_publishable_uvT1wVUqfjVpZNOhoT0BWg_jB8Y0sf8';
+const NOT_CONFIGURED = SUPABASE_URL.includes('COLE_AQUI') || SUPABASE_KEY.includes('COLE_AQUI');
+const db = NOT_CONFIGURED ? null : window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+/* =====================================================================
+   SETORES — mude nome/cor/ícone aqui se precisar.
+   Usuários, senhas e permissões agora ficam na tabela "users" do Supabase,
+   não mais aqui no código — veja o guia COMO_CONFIGURAR.md.
+   ===================================================================== */
+const SECTORS=[
+  {id:'gestaocoord',  name:'Gestão - Coordenação',                    icon:'🏢', color:'#1A3A6B', bg:'#476188'},
+  {id:'gestaolide',   name:'Gestão - Liderança',                      icon:'🏭', color:'#297ADF', bg:'#5394E5'}, 
+  {id:'gestaorh',     name:'Gestão - RH',                             icon:'📊', color:'#00D884', bg:'#4CE3A8'},
+  {id:'rh',           name:'Recursos Humanos',                        icon:'🫂', color:'#45C645', bg:'#7CD77C'},
+  {id:'planejamento', name:'Planejamento',                            icon:'📈', color:'#9CAA9B', bg:'#AFBBAF'},
+  {id:'seguranca',    name:'Segurança do Trabalho',                   icon:'🦺', color:'#DFBD41', bg:'#E8D07A'},
+  {id:'gestaodistr',  name:'Gestão - DISTR',                          icon:'📦', color:'#C1541A', bg:'#E08A4F'},
+  {id:'servicos',     name:'Prestadores de Serviços - Grupo Fênix',   icon:'🛡️', color:'#323232', bg:'#464646'},
+];
+const sectorOf=id=>SECTORS.find(s=>s.id===id);
+
+const ROLES={
+  user:{label:'Usuário'},
+  admin:{label:'Administrador'},
+  // mantidos por compatibilidade com dados antigos que ainda não passaram pela migração
+  operador:{label:'Operador'},
+  gestor:{label:'Gestor'},
+};
+
+const PRIORITIES=['Urgente','Alta','Média','Baixa'];
+const CHANNELS=['Distribuidora','E-commerce','Administrativo','SESMT','Qualidade','Todos'];
+const CHC={
+  Distribuidora:{bg:'#E9EDFB',text:'#2A3C8F',border:'#5D72D1'},
+  'E-commerce':{bg:'#E7F5EA',text:'#276B3B',border:'#63B57E'},
+  Administrativo:{bg:'#FDF3DD',text:'#8A5A0B',border:'#E8AC3D'},
+  SESMT:{bg:'#FCE8DC',text:'#9A4B0C',border:'#E8955A'},
+  Qualidade:{bg:'#F1E9FB',text:'#5B2A8F',border:'#A97CD1'},
+  Todos:{bg:'#EEEEF2',text:'#5B5E6E',border:'#B7B9C4'}
+};
+const STATUSES=['Pendente','Em Andamento','Concluída','Finalizada'];
+const OPERATOR_STATUSES=['Em Andamento','Concluída'];
+
+const PC={Urgente:{bg:'#FFC5D3',text:'#960018',border:'#950606'},Alta:{bg:'#FBEAE4',text:'#9A3412',border:'#E07A50'},Média:{bg:'#FDF3DD',text:'#8A5A0B',border:'#E8AC3D'},Baixa:{bg:'#E7F5EA',text:'#276B3B',border:'#63B57E'}};
+const SC={
+  'Pendente':      {bg:'#EEEEF2',text:'#5B5E6E',border:'#C9CBD6'},
+  'Em Andamento':  {bg:'#FFF3AE',text:'#BA8E23',border:'#BA8E23'},
+  'Concluída':     {bg:'#E1F5EE',text:'#0E8F6E',border:'#63C7A6'},
+  'Finalizada':    {bg:'#B0E7B0',text:'#4A814A',border:'#4A814A'},
+  'Validada':      {bg:'#E7F5EA',text:'#1D7A34',border:'#63B57E'},
+};
+
+const today=()=>new Date().toISOString().slice(0,10);
+const uploadFile=async(file)=>{
+  if(!file)return null;
+  const path=`${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-_]/g,'_')}`;
+  const{error}=await db.storage.from('anexos').upload(path,file);
+  if(error){alert('Erro ao enviar anexo: '+error.message);return null;}
+  const{data}=db.storage.from('anexos').getPublicUrl(path);
+  return data.publicUrl;
+};
+const OPEN_STATUSES=['Pendente','Em Andamento']; // status que ainda podem estar em atraso
+const isAtrasada=t=>!!t.deadline && t.deadline<today() && OPEN_STATUSES.includes(t.status);
+const ATRASADA_C={bg:'#FBE4E4',text:'#A32D2D',border:'#E88C8C'};
+const parseJsonArray=v=>{try{const p=typeof v==='string'?JSON.parse(v):v;return Array.isArray(p)?p:[]}catch{return[]}};
+// sectors agora é um objeto {setorId: 'operador'|'gestor'} em vez de uma lista simples.
+// parseSectorRoles aceita também o formato antigo (array) por segurança, tratando cada setor como 'operador'.
+const parseSectorRoles=v=>{
+  try{
+    const p=typeof v==='string'?JSON.parse(v):v;
+    if(Array.isArray(p)){const o={};p.forEach(id=>{o[id]='operador'});return o}
+    return(p&&typeof p==='object')?p:{};
+  }catch{return{}}
+};
+const getAssignees=t=>parseJsonArray(t.member);              // array de usernames
+const userSectors=u=>Object.keys(parseSectorRoles(u.sectors)); // ids dos setores que o usuário acessa
+const roleInSector=(u,sectorId)=>u.role==='admin'?'gestor':(parseSectorRoles(u.sectors)[sectorId]||null);
+const allowedSectorIdsOf=u=>u.role==='admin'?SECTORS.map(s=>s.id):userSectors(u);
+const nameOf=(users,username)=>{const u=users.find(x=>x.username===username);return u?u.name:username};
+const avatarColor=n=>{const cols=['#3454D1','#8E44AD','#0E8F6E','#C8790A','#D1345B','#2E9BB0','#6C63A6'];let h=0;for(let i=0;i<(n||'').length;i++)h=n.charCodeAt(i)+((h<<5)-h);return cols[Math.abs(h)%cols.length]};
+
+const Avatar=({name,size=28})=>(
+<div style={{width:size,height:size,borderRadius:'50%',background:avatarColor(name||'?'),color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.42,fontWeight:700,border:'2px solid #fff',flexShrink:0}}>
+    {(name||'?').charAt(0).toUpperCase()}
+</div>);
+
+const Badge=({c,children})=>(
+<span style={{fontSize:11,padding:'3px 10px',borderRadius:99,background:c.bg,color:c.text,border:`0.5px solid ${c.border}`,fontWeight:600,display:'inline-block',whiteSpace:'nowrap'}}>{children}</span>
+);
+
+/* ── Botão + modal: troca de senha pelo próprio usuário ───────────── */
+function ChangePasswordButton({currentUser,onChangePassword}){
+  const [open,setOpen]=useState(false);
+  const [cur,setCur]=useState(''),[np,setNp]=useState(''),[np2,setNp2]=useState(''),[err,setErr]=useState(''),[ok,setOk]=useState(false);
+  const reset=()=>{setCur('');setNp('');setNp2('');setErr('');setOk(false)};
+  const submit=async()=>{
+    if(cur!==currentUser.password){setErr('Senha atual incorreta.');return}
+    if(!np.trim()||np.length<4){setErr('A nova senha deve ter pelo menos 4 caracteres.');return}
+    if(np!==np2){setErr('As senhas não conferem.');return}
+    setErr('');
+    await onChangePassword(np);
+    setOk(true);
+    setTimeout(()=>{setOpen(false);reset()},1200);
+  };
+  return(<>
+<button onClick={()=>{setOpen(true);reset()}} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>🔑 Alterar senha</button>
+      {open&&(
+<div style={{position:'fixed',inset:0,background:'rgba(10,12,25,.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false)}}>
+<div style={{background:'#fff',borderRadius:16,padding:24,width:'100%',maxWidth:360}}>
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
+<h3 style={{fontWeight:700,fontSize:16}}>Alterar senha</h3>
+<button onClick={()=>setOpen(false)} style={{background:'none',border:'none',fontSize:20,color:'#aaa',cursor:'pointer'}}>✕</button>
+</div>
+          {ok
+            ?<p style={{fontSize:14,color:'#1D7A34',fontWeight:600}}>✓ Senha alterada com sucesso!</p>
+            :<>
+              {err&&<div style={{fontSize:13,color:'#9A3412',background:'#FBEAE4',borderRadius:8,padding:'9px 12px',marginBottom:12}}>{err}</div>}
+<label style={{fontSize:12,color:'#8A8D9C',marginBottom:6,display:'block',fontWeight:600}}>Senha atual</label>
+<input type="password" autoComplete="current-password" style={{marginBottom:12}} value={cur} onChange={e=>setCur(e.target.value)}/>
+<label style={{fontSize:12,color:'#8A8D9C',marginBottom:6,display:'block',fontWeight:600}}>Nova senha</label>
+<input type="password" autoComplete="new-password" style={{marginBottom:12}} value={np} onChange={e=>setNp(e.target.value)}/>
+<label style={{fontSize:12,color:'#8A8D9C',marginBottom:6,display:'block',fontWeight:600}}>Confirmar nova senha</label>
+<input type="password" autoComplete="new-password" style={{marginBottom:18}} value={np2} onChange={e=>setNp2(e.target.value)}/>
+<button style={{width:'100%',padding:'10px 0',borderRadius:8,border:'none',background:'#161A2E',color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={submit}>Salvar nova senha</button>
+</>
+          }
+</div>
+</div>
+      )}
+</>);
+}
+
+/* ── TELA 1: Login único (operador, gestor ou admin) ─────────────── */
+function LoginScreen({users,onLogin}){
+  const [user,setUser]=useState(''),[pass,setPass]=useState(''),[err,setErr]=useState('');
+  const enter=e=>{
+    e.preventDefault();
+    const found=users.find(u=>u.username===user.trim()&&u.password===pass);
+    if(found)onLogin(found); else setErr('Usuário ou senha incorretos.');
+  };
+  return(
+<div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
+<div style={{background:'#161A2E',padding:'56px 16px 70px',textAlign:'center'}}>
+<p style={{color:'#8FA3E8',fontWeight:700,fontSize:12,letterSpacing:4,textTransform:'uppercase',marginBottom:10}}>Portal interno</p>
+<h1 style={{color:'#fff',fontWeight:700,fontSize:30,marginBottom:10}}>Checklist de Setores</h1>
+<p style={{color:'rgba(255,255,255,.65)',fontSize:14,maxWidth:440,margin:'0 auto'}}>Entre com seu usuário e senha para acessar seus setores.</p>
+</div>
+<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'32px 16px',marginTop:-40}}>
+<form autoComplete="on" onSubmit={enter} style={{background:'#fff',borderRadius:16,padding:28,width:'100%',maxWidth:380,border:'0.5px solid #E1E3EC'}}>
+<p style={{fontSize:18,fontWeight:700,marginBottom:20}}>Entrar</p>
+          {err&&<div style={{fontSize:13,color:'#9A3412',background:'#FBEAE4',borderRadius:8,padding:'9px 12px',marginBottom:12}}>{err}</div>}
+<label style={{fontSize:12,color:'#8A8D9C',marginBottom:6,display:'block',fontWeight:600}}>Usuário</label>
+<input name="username" autoComplete="username" style={{marginBottom:14}} value={user} onChange={e=>setUser(e.target.value)} placeholder="seu usuário"/>
+<label style={{fontSize:12,color:'#8A8D9C',marginBottom:6,display:'block',fontWeight:600}}>Senha</label>
+<input name="password" autoComplete="current-password" type="password" style={{marginBottom:18}} value={pass} onChange={e=>setPass(e.target.value)} placeholder="sua senha"/>
+<button type="submit" style={{width:'100%',padding:'11px 0',borderRadius:8,border:'none',background:'#161A2E',color:'#fff',fontWeight:700,cursor:'pointer',fontSize:15}}>Entrar</button>
+</form>
+</div>
+</div>
+  );
+}
+
+/* ── TELA 2: Setores permitidos para o usuário logado ─────────────── */
+function SectorGridScreen({currentUser,onPickSector,onManageUsers,onLogout,onChangePassword}){
+  const allowed=SECTORS.filter(s=>allowedSectorIdsOf(currentUser).includes(s.id));
+  return(
+<div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
+<div style={{background:'#161A2E',padding:'0 16px',height:60,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+<span style={{color:'#fff',fontWeight:700,fontSize:15}}>Checklist de Setores</span>
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · {ROLES[currentUser.role]?.label||currentUser.role}</span>
+          {currentUser.role==='admin'&&<button onClick={onManageUsers} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>⚙️ Gerenciar usuários</button>}
+<ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
+<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+</div>
+</div>
+<div style={{flex:1,maxWidth:760,margin:'0 auto',padding:'40px 16px',width:'100%'}}>
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',marginBottom:14}}>Seus setores</p>
+        {allowed.length===0
+          ?<p style={{fontSize:14,color:'#8A8D9C'}}>Você ainda não tem nenhum setor vinculado. Fale com um administrador.</p>
+          :<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:16}}>
+            {allowed.map(s=>(
+<div key={s.id} className="card-hover" onClick={()=>onPickSector(s.id)} style={{background:'#fff',borderRadius:16,padding:'26px 22px',cursor:'pointer',border:'0.5px solid #E1E3EC',borderTop:`4px solid ${s.color}`}}>
+<div style={{width:48,height:48,borderRadius:12,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,marginBottom:14}}>{s.icon}</div>
+<p style={{fontWeight:700,fontSize:17,color:'#1A1D29',marginBottom:4}}>{s.name}</p>
+<p style={{fontSize:13,color:'#8A8D9C'}}>{roleInSector(currentUser,s.id)==='gestor'?'Gerenciar tarefas →':'Ver minhas tarefas →'}</p>
+</div>
+            ))}
+</div>
+        }
+</div>
+</div>
+  );
+}
+
+/* ── TELA: Operador (vê e atualiza só as próprias tarefas) ───────── */
+function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatus,addComment,comments,taskId,setTaskId,onChangePassword}){
+  const mine=tasks.filter(t=>getAssignees(t).includes(currentUser.username)&&(t.status==='Pendente'||t.status==='Em Andamento'));
+  const [fPriority,setFPriority]=useState('__ALL__'),[fChannel,setFChannel]=useState('__ALL__');
+  const [sortField,setSortField]=useState(null),[sortDir,setSortDir]=useState('asc');
+  const toggleSort=field=>{if(sortField!==field){setSortField(field);setSortDir('asc')}else{setSortDir(d=>d==='asc'?'desc':'asc')}};
+  const mineFiltered=mine.filter(t=>(fPriority==='__ALL__'||t.priority===fPriority)&&(fChannel==='__ALL__'||t.channel===fChannel));
+  const sortedMine=(()=>{
+  if(!sortField)return mineFiltered;
+  const arr=[...mineFiltered];
+  arr.sort((a,b)=>{
+    if(sortField==='deadline'){
+      const da=a.deadline,db=b.deadline;
+      if(!da&&!db)return 0;
+      if(!da)return 1;
+      if(!db)return -1;
+      return sortDir==='asc'?(da<db?-1:da>db?1:0):(da>db?-1:da<db?1:0);
+    }
+    if(sortField==='priority'){
+      const ia=PRIORITIES.indexOf(a.priority),ib=PRIORITIES.indexOf(b.priority);
+      return sortDir==='asc'?ia-ib:ib-ia;
+    }
+    return 0;
+  });
+  return arr;
+})();
+  const sel=taskId?tasks.find(t=>t.id===taskId):null;
+  const [comment,setComment]=useState(''),[commentFile,setCommentFile]=useState(null);
+  
+  // Progresso do operador NESTE setor (inclui validadas, para refletir o total real de atividades do setor)
+  const mySectorAll=tasks.filter(t=>getAssignees(t).includes(currentUser.username)&&t.sector===sector.id);
+  const myTotal=mySectorAll.length,myDone=mySectorAll.filter(t=>t.status==='Finalizada').length;
+  const myPct=myTotal?Math.round((myDone/myTotal)*100):0;
+  const myColor=myPct<30?'#C0392B':myPct<70?'#C8790A':'#1D7A34';
+  return(
+<div style={{minHeight:'100vh'}}>
+<div style={{background:sector.color,padding:'0 16px',height:60,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+<div style={{display:'flex',alignItems:'center',gap:12}}>
+<button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
+<span style={{color:'#fff',fontWeight:700,fontSize:15}}>{sector.icon} {sector.name}</span>
+</div>
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · Operador</span>
+<ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
+<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+</div>
+</div>
+<div style={{maxWidth:720,margin:'0 auto',padding:'24px 16px'}}>
+        {myTotal>0&&(
+<div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:'14px 16px',marginBottom:18}}>
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+<p style={{fontSize:12,fontWeight:700,color:'#5B5E6E'}}>Seu progresso neste setor</p>
+<p style={{fontSize:12,fontWeight:700,color:myColor}}>{myDone} de {myTotal} finalizadas · {myPct}%</p>
+</div>
+<div style={{background:'#EEEEF2',borderRadius:99,height:10,overflow:'hidden'}}>
+<div style={{width:`${myPct}%`,background:myColor,height:'100%',borderRadius:99,transition:'width .3s'}}/>
+</div>
+</div>
+        )}
+<div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+<select style={{flex:1,minWidth:130}} value={fPriority} onChange={e=>setFPriority(e.target.value)}>
+<option value="__ALL__">Todas as prioridades</option>
+          {PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}
+</select>
+<select style={{flex:1,minWidth:130}} value={fChannel} onChange={e=>setFChannel(e.target.value)}>
+<option value="__ALL__">Todos os canais</option>
+          {CHANNELS.map(c=><option key={c} value={c}>{c}</option>)}
+</select>
+<button onClick={()=>toggleSort('deadline')} style={{padding:'4px 14px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',background:sortField==='deadline'?sector.bg:'#EEEEF2',color:sortField==='deadline'?'#FFFFFF':'#000000',border:`1.5px solid ${sortField==='deadline'?sector.color:'#ddd'}`}}>Prazo{sortField==='deadline'?(sortDir==='asc'?' ▲':' ▼'):''}</button>
+<button onClick={()=>toggleSort('priority')} style={{padding:'4px 14px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',background:sortField==='priority'?sector.bg:'#EEEEF2',color:sortField==='priority'?'#FFFFFF':'#8A8D9C',border:`1.5px solid ${sortField==='priority'?sector.color:'#ddd'}`}}>Prioridade{sortField==='priority'?(sortDir==='asc'?' ▲':' ▼'):''}</button>
+</div>
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:12}}>Minhas tarefas pendentes</p>
+        {sortedMine.length===0
+          ?<div style={{textAlign:'center',padding:'4rem 0'}}><p style={{fontSize:36,marginBottom:10}}>🎉</p><p style={{fontSize:14,color:'#8A8D9C'}}>Nenhuma tarefa pendente para você!</p></div>
+          :sortedMine.map(t=>(
+<div key={t.id} onClick={()=>setTaskId(t.id)} className="card-hover" style={{background:'#fff',border:'0.5px solid #E1E3EC',borderLeft:`4px solid ${PC[t.priority].border}`,borderRadius:12,padding:'14px 16px',marginBottom:10,cursor:'pointer'}}>
+<div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:8}}>
+<span style={{fontWeight:700,fontSize:15}}>{t.title}</span>
+<div style={{display:'flex',gap:6}}>
+                {isAtrasada(t)&&<Badge c={ATRASADA_C}>🔴 Atrasada</Badge>}
+<Badge c={SC[t.status]}>{t.status}</Badge>
+</div>
+</div>
+<div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,color:'#8A8D9C',alignItems:'center'}}>
+<Badge c={PC[t.priority]}>{t.priority}</Badge>
+                {t.channel&&<Badge c={CHC[t.channel]}>{t.channel}</Badge>}
+                {t.deadline&&<span>📅 {t.deadline}</span>}
+</div>
+</div>
+          ))}
+</div>
+
+      {sel&&(
+<div style={{position:'fixed',inset:0,background:'rgba(10,12,25,.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:16}} onClick={e=>{if(e.target===e.currentTarget)setTaskId(null)}}>
+<div style={{background:'#fff',borderRadius:16,padding:24,width:'100%',maxWidth:480,maxHeight:'86vh',overflowY:'auto'}}>
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+<h3 style={{fontWeight:700,fontSize:17}}>{sel.title}</h3>
+<button onClick={()=>setTaskId(null)} style={{background:'none',border:'none',fontSize:20,color:'#aaa',cursor:'pointer'}}>✕</button>
+</div>
+<div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}><Badge c={PC[sel.priority]}>{sel.priority}</Badge><Badge c={SC[sel.status]}>{sel.status}</Badge>{sel.channel&&<Badge c={CHC[sel.channel]}>{sel.channel}</Badge>}</div>
+            {sel.description&&<p style={{fontSize:14,color:'#5B5E6E',background:'#F3F4F8',borderRadius:8,padding:'10px 14px',marginBottom:14}}>{sel.description}</p>}
+            {sel.attachment_url&&<a href={sel.attachment_url} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:13,color:'#3454D1',fontWeight:600,marginBottom:14}}>📎 Ver anexo da tarefa</a>}
+            {sel.review_note&&<p style={{fontSize:13,color:'#9A3412',background:'#FBEAE4',borderRadius:8,padding:'10px 14px',marginBottom:14}}><b>Observação do responsável:</b> {sel.review_note}</p>}
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',marginBottom:8}}>Atualizar situação</p>
+<div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18}}>
+              {OPERATOR_STATUSES.map(st=>{const on=sel.status===st;const c=SC[st];return(
+<button key={st} onClick={()=>updStatus(sel.id,st)} style={{padding:'7px 16px',borderRadius:99,fontSize:13,fontWeight:600,cursor:'pointer',background:on?c.bg:'#F3F4F8',color:on?c.text:'#8A8D9C',border:`1.5px solid ${on?c.border:'#E1E3EC'}`}}>{on&&'✓ '}{st}</button>
+              )})}
+</div>
+            {sel.status==='Concluída'&&<p style={{fontSize:12,color:'#8A5A0B',background:'#FDF3DD',borderRadius:8,padding:'8px 12px',marginBottom:14}}>Esta tarefa foi concluída por você e enviada para validação do responsável do setor.</p>}
+<div style={{borderTop:'0.5px solid #E1E3EC',paddingTop:14}}>
+<p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💬 Comentários</p>
+              {comments.map(c=>(
+<div key={c.id} style={{background:'#F3F4F8',borderRadius:8,padding:'8px 12px',marginBottom:8}}>
+<p style={{fontSize:11,color:'#8A8D9C',marginBottom:2}}>{c.author} · {c.date}</p>
+                  {c.text&&<p style={{fontSize:13}}>{c.text}</p>}
+                  {c.attachment_url&&<a href={c.attachment_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#3454D1',fontWeight:600}}>📎 Ver anexo</a>}
+</div>
+              ))}
+<textarea style={{marginTop:6,minHeight:60,resize:'vertical'}} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escreva um comentário..."/>
+<input type="file" accept="image/*,.pdf" style={{marginTop:6}} onChange={e=>setCommentFile(e.target.files[0]||null)}/>
+              {commentFile&&<p style={{fontSize:12,color:'#5B5E6E',marginTop:4}}>📎 {commentFile.name}</p>}
+<button style={{marginTop:8,padding:'7px 16px',borderRadius:8,border:'none',background:sector.color,color:'#fff',fontWeight:600,cursor:'pointer'}} onClick={async()=>{
+                let attachment_url=null;
+                if(commentFile)attachment_url=await uploadFile(commentFile);
+                if(!comment.trim()&&!attachment_url)return;
+                await addComment(sel.id,comment,attachment_url);
+                setComment('');setCommentFile(null);
+              }}>Enviar</button>
+</div>
+</div>
+</div>
+      )}
+</div>
+  );
+}
+
+/* ── TELA: Gestor / Admin (gestão completa de 1 setor por vez) ────── */
+function ManagerScreen({sector,currentUser,users,tasks,onBack,onLogout,
+  addTask,delTask,updStatus,validate,addComment,comments,taskId,setTaskId,onChangePassword}){
+  const [fMember,setFMember]=useState('Todos'),[fPriority,setFPriority]=useState('__ALL__'),[fChannel,setFChannel]=useState('__ALL__'),[fStatus,setFStatus]=useState(new Set(STATUSES));
+  const [sortField,setSortField]=useState(null),[sortDir,setSortDir]=useState('asc'); // sortField: null | 'deadline' | 'priority'
+  const [showForm,setShowForm]=useState(false),[form,setForm]=useState({});
+  const [comment,setComment]=useState(''),[note,setNote]=useState(''),[commentFile,setCommentFile]=useState(null),[showValidation,setShowValidation]=useState(false);
+
+  const sectorTasks=tasks.filter(t=>t.sector===sector.id);
+  const sectorUsers=users.filter(u=>userSectors(u).includes(sector.id));
+  const toggleStatus=st=>setFStatus(prev=>{const nx=new Set(prev);nx.has(st)?(nx.size>1&&nx.delete(st)):nx.add(st);return nx});
+  const toggleSort=field=>{if(sortField!==field){setSortField(field);setSortDir('asc')}else{setSortDir(d=>d==='asc'?'desc':'asc')}};
+  const toggleFM=un=>setForm(f=>{const ms=f.members||[];return{...f,members:ms.includes(un)?ms.filter(x=>x!==un):[...ms,un]}});
+  const mkForm=()=>({title:'',members:[],priority:'Média',channel:'',deadline:today(),description:'',attachmentFile:null});
+
+  const filtered=sectorTasks.filter(t=>{
+    const ms=getAssignees(t);
+    return (fMember==='Todos'||ms.includes(fMember)) && (fPriority==='__ALL__'||t.priority===fPriority) && (fChannel==='__ALL__'||t.channel===fChannel) && fStatus.has(t.status);
+  });
+  const sortedFiltered=(()=>{
+    if(!sortField)return filtered;
+    const arr=[...filtered];
+    arr.sort((a,b)=>{
+      if(sortField==='deadline'){
+        const da=a.deadline,db=b.deadline;
+        if(!da&&!db)return 0;
+        if(!da)return 1;   // sem prazo sempre por último
+        if(!db)return -1;
+        return sortDir==='asc'?(da<db?-1:da>db?1:0):(da>db?-1:da<db?1:0);
+      }
+      if(sortField==='priority'){
+        const ia=PRIORITIES.indexOf(a.priority),ib=PRIORITIES.indexOf(b.priority);
+        return sortDir==='asc'?ia-ib:ib-ia;
+      }
+      return 0;
+    });
+    return arr;
+  })();
+  const pendingValidation=sectorTasks.filter(t=>t.status==='Concluída');
+  const sel=taskId?tasks.find(t=>t.id===taskId):null;
+  const selMembers=sel?getAssignees(sel):[];
+  const st={total:sectorTasks.length,pend:sectorTasks.filter(t=>t.status==='Pendente').length,and:sectorTasks.filter(t=>t.status==='Em Andamento').length,val:sectorTasks.filter(t=>t.status==='Finalizada').length,fin:pendingValidation.length,atr:sectorTasks.filter(isAtrasada).length};
+  const progressPct=st.total?Math.round((st.val/st.total)*100):0;
+  const progressColor=progressPct<30?'#C0392B':progressPct<70?'#C8790A':'#1D7A34';
+
+  return(
+<div style={{minHeight:'100vh'}}>
+<div style={{background:sector.color,padding:'0 16px',display:'flex',alignItems:'center',justifyContent:'space-between',height:60}}>
+<div style={{display:'flex',alignItems:'center',gap:12}}>
+<button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
+<span style={{color:'#fff',fontWeight:700,fontSize:15}}>{sector.icon} {sector.name}</span>
+</div>
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · {currentUser.role==='admin'?'Administrador':(roleInSector(currentUser,sector.id)==='gestor'?'Gestor':'Operador')}</span>
+<ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
+<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+</div>
+</div>
+
+<div style={{maxWidth:900,margin:'0 auto',padding:'24px 16px'}}>
+        {/* Métricas */}
+<div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+          {[{l:'Total',v:st.total,c:'#3454D1',bg:'#E9EDFB'},{l:'Pendentes',v:st.pend,c:'#5B5E6E',bg:'#EEEEF2'},
+{l:'Em andamento',v:st.and,c:'#BA8E23',bg:'#FFF3AE'},{l:'Finalizadas',v:st.val,c:'#4A814A',bg:'#B0E7B0'},{l:'Atrasadas',v:st.atr,c:'#A32D2D',bg:'#FBE4E4'}]
+          .map(m=>(
+<div key={m.l} style={{background:m.bg,borderRadius:12,padding:'12px 18px',flex:1,minWidth:100}}>
+<p style={{fontSize:11,color:m.c,fontWeight:700,textTransform:'uppercase',opacity:.8}}>{m.l}</p>
+<p style={{fontSize:24,fontWeight:700,color:m.c}}>{m.v}</p>
+</div>
+          ))}
+</div>
+
+        {/* Barra de progresso do setor */}
+<div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:'14px 16px',marginBottom:16}}>
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+<p style={{fontSize:12,fontWeight:700,color:'#5B5E6E'}}>Progresso do setor</p>
+<p style={{fontSize:12,fontWeight:700,color:progressColor}}>{st.val} de {st.total} finalizadas · {progressPct}%</p>
+</div>
+<div style={{background:'#EEEEF2',borderRadius:99,height:10,overflow:'hidden'}}>
+<div style={{width:`${progressPct}%`,background:progressColor,height:'100%',borderRadius:99,transition:'width .3s'}}/>
+</div>
+</div>
+
+        {/* Fila de validação */}
+        {pendingValidation.length>0&&(
+<div style={{background:'#FDF3DD',border:'0.5px solid #E8AC3D',borderRadius:12,marginBottom:18,overflow:'hidden'}}>
+<div onClick={()=>setShowValidation(v=>!v)} style={{padding:'12px 16px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<p style={{fontWeight:700,fontSize:14,color:'#8A5A0B'}}>⏳ Tarefas aguardando sua validação ({pendingValidation.length})</p>
+<span style={{fontSize:12,color:'#8A5A0B',fontWeight:700}}>{showValidation?'▴ recolher':'▾ ver tarefas'}</span>
+</div>
+          {showValidation&&(
+<div style={{padding:'0 16px 14px'}}>
+              {pendingValidation.map(t=>(
+<div key={t.id} onClick={()=>setTaskId(t.id)} style={{background:'#fff',borderRadius:10,padding:'10px 14px',marginBottom:8,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<span style={{fontSize:13,fontWeight:600}}>{t.title}</span>
+<span style={{fontSize:12,color:'#8A8D9C'}}>{getAssignees(t).map(un=>nameOf(users,un)).join(', ')} →</span>
+</div>
+              ))}
+</div>
+          )}
+</div>
+        )}
+
+        {/* Filtros e ações */}
+<div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:'14px 16px',marginBottom:16}}>
+<div style={{display:'flex',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+<select style={{flex:1,minWidth:140}} value={fMember} onChange={e=>setFMember(e.target.value)}>
+<option value="Todos">Todos os membros</option>
+              {sectorUsers.map(u=><option key={u.username} value={u.username}>{u.name}</option>)}
+</select>
+<select style={{flex:1,minWidth:140}} value={fPriority} onChange={e=>setFPriority(e.target.value)}>
+<option value="__ALL__">Todas as prioridades</option>
+              {PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}
+</select>
+<select style={{flex:1,minWidth:140}} value={fChannel} onChange={e=>setFChannel(e.target.value)}>
+<option value="__ALL__">Todos os canais</option>
+              {CHANNELS.map(c=><option key={c} value={c}>{c}</option>)}
+</select>
+<button style={{padding:'8px 18px',borderRadius:8,border:'none',background:sector.color,color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={()=>{setForm(mkForm());setShowForm(true)}}>+ Nova tarefa</button>
+</div>
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {STATUSES.map(sx=>{const on=fStatus.has(sx);const c=SC[sx];return(
+<button key={sx} onClick={()=>toggleStatus(sx)} style={{padding:'4px 14px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',background:on?c.bg:'#EEEEF2',color:on?c.text:'#aaa',border:`1.5px solid ${on?c.border:'#ddd'}`,opacity:on?1:.5}}>{on&&'✓ '}{sx}</button>
+              )})}
+<button onClick={()=>toggleSort('deadline')} style={{marginLeft:'auto',padding:'4px 14px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',background:sortField==='deadline'?sector.bg:'#EEEEF2',color:sortField==='deadline'?'#FFFFFF':'#000000',border:`1.5px solid ${sortField==='deadline'?sector.color:'#ddd'}`}}>Prazo{sortField==='deadline'?(sortDir==='asc'?' ▲':' ▼'):''}</button>
+<button onClick={()=>toggleSort('priority')} style={{padding:'4px 14px',borderRadius:99,fontSize:12,fontWeight:600,cursor:'pointer',background:sortField==='priority'?sector.bg:'#EEEEF2',color:sortField==='priority'?'#FFFFFF':'#8A8D9C',border:`1.5px solid ${sortField==='priority'?sector.color:'#ddd'}`}}>Prioridade{sortField==='priority'?(sortDir==='asc'?' ▲':' ▼'):''}</button>
+</div>
+</div>
+
+        {/* Formulário nova tarefa */}
+        {showForm&&(
+<div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:20,marginBottom:16}}>
+<p style={{fontWeight:700,marginBottom:14,color:sector.color}}>Nova tarefa — {sector.name}</p>
+<label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Título</label>
+<input spellCheck="true" lang="pt-BR" style={{marginBottom:12}} value={form.title||''} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Descreva a tarefa..."/>
+<label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Responsáveis</label>
+<div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
+              {sectorUsers.length===0&&<p style={{fontSize:12,color:'#8A8D9C'}}>Nenhum usuário vinculado a este setor ainda. Cadastre em "Gerenciar usuários".</p>}
+              {sectorUsers.map(u=>{const on=(form.members||[]).includes(u.username);return(
+<button key={u.username} onClick={()=>toggleFM(u.username)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 14px 5px 8px',borderRadius:99,fontSize:13,cursor:'pointer',background:on?sector.bg:'#F3F4F8',color:on?sector.color:'#8A8D9C',border:`1.5px solid ${on?sector.color:'#E1E3EC'}`}}><Avatar name={u.name} size={20}/>{u.name}</button>
+              )})}
+</div>
+<div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+<div style={{flex:1,minWidth:120}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Prioridade</label><select value={form.priority||'Média'} onChange={e=>setForm(f=>({...f,priority:e.target.value}))}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div>
+<div style={{flex:1,minWidth:120}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Canal</label><select value={form.channel||''} onChange={e=>setForm(f=>({...f,channel:e.target.value}))}><option value="" disabled>Selecione...</option>{CHANNELS.map(c=><option key={c}>{c}</option>)}</select></div>
+<div style={{flex:1,minWidth:120}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Prazo</label><input type="date" value={form.deadline||today()} onChange={e=>setForm(f=>({...f,deadline:e.target.value}))}/></div>
+</div>
+<label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Descrição (opcional)</label>
+<textarea spellCheck="true" lang="pt-BR" style={{marginBottom:14,minHeight:60,resize:'vertical'}} value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))}/>
+<label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Anexo (opcional — imagem ou PDF)</label>
+<input type="file" accept="image/*,.pdf" style={{marginBottom:14}} onChange={e=>setForm(f=>({...f,attachmentFile:e.target.files[0]||null}))}/>
+          {form.attachmentFile&&<p style={{fontSize:12,color:'#5B5E6E',marginTop:-8,marginBottom:14}}>📎 {form.attachmentFile.name}</p>}
+<div style={{display:'flex',gap:10}}>
+<button style={{padding:'8px 18px',borderRadius:8,border:'none',background:sector.color,color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={async()=>{
+              if(!form.title?.trim()||!(form.members||[]).length||!form.channel)return;
+              let attachment_url=null;
+              if(form.attachmentFile)attachment_url=await uploadFile(form.attachmentFile);
+              await addTask(sector.id,{...form,attachment_url});
+              setShowForm(false);
+            }}>Criar tarefa</button>
+<button style={{padding:'8px 18px',borderRadius:8,border:'0.5px solid #E1E3EC',background:'#fff',cursor:'pointer'}} onClick={()=>setShowForm(false)}>Cancelar</button>
+</div>
+</div>
+        )}
+
+        {/* Lista de tarefas */}
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',marginBottom:10}}>Tarefas ({filtered.length})</p>
+        {sortedFiltered.length===0?<p style={{fontSize:13,color:'#8A8D9C',textAlign:'center',padding:'2rem 0'}}>Nenhuma tarefa encontrada.</p>:sortedFiltered.map(t=>(
+<div key={t.id} onClick={()=>setTaskId(t.id)} className="card-hover" style={{background:'#fff',border:'0.5px solid #E1E3EC',borderLeft:`4px solid ${t.status==='Concluída'?'#E8AC3D':PC[t.priority].border}`,borderRadius:12,padding:'14px 16px',marginBottom:10,cursor:'pointer'}}>
+<div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:8}}>
+<span style={{fontWeight:700,fontSize:15}}>{t.title}</span>
+<div style={{display:'flex',gap:6}}>
+              {isAtrasada(t)&&<Badge c={ATRASADA_C}>🔴 Atrasada</Badge>}
+<Badge c={SC[t.status]}>{t.status}</Badge>
+</div>
+</div>
+<div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+<div style={{display:'flex'}}>{getAssignees(t).map((un,i)=><div key={un} style={{marginLeft:i>0?-8:0}}><Avatar name={nameOf(users,un)} size={24}/></div>)}</div>
+<span style={{fontSize:12,color:'#8A8D9C'}}>{getAssignees(t).map(un=>nameOf(users,un)).join(', ')}</span>
+<Badge c={PC[t.priority]}>{t.priority}</Badge>
+              {t.channel&&<Badge c={CHC[t.channel]}>{t.channel}</Badge>}
+              {t.deadline&&<span style={{fontSize:12,color:'#8A8D9C',marginLeft:'auto'}}>📅 {t.deadline}</span>}
+</div>
+</div>
+        ))}
+</div>
+
+      {/* Modal detalhe */}
+      {sel&&(
+<div style={{position:'fixed',inset:0,background:'rgba(10,12,25,.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:16}} onClick={e=>{if(e.target===e.currentTarget)setTaskId(null)}}>
+<div style={{background:'#fff',borderRadius:16,padding:24,width:'100%',maxWidth:520,maxHeight:'88vh',overflowY:'auto'}}>
+<div style={{display:'flex',justifyContent:'space-between',marginBottom:12,gap:10}}>
+<div>
+<div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}><Badge c={PC[sel.priority]}>{sel.priority}</Badge><Badge c={SC[sel.status]}>{sel.status}</Badge>{sel.channel&&<Badge c={CHC[sel.channel]}>{sel.channel}</Badge>}</div>
+<h3 style={{fontWeight:700,fontSize:17}}>{sel.title}</h3>
+</div>
+<button onClick={()=>setTaskId(null)} style={{background:'none',border:'none',fontSize:20,color:'#aaa',cursor:'pointer'}}>✕</button>
+</div>
+<div style={{background:'#F3F4F8',borderRadius:10,padding:'10px 14px',marginBottom:14,display:'flex',gap:20,flexWrap:'wrap'}}>
+<div><p style={{fontSize:11,color:'#8A8D9C',fontWeight:700}}>Responsáveis</p><p style={{fontSize:13,fontWeight:600}}>{selMembers.map(un=>nameOf(users,un)).join(', ')}</p></div>
+              {sel.deadline&&<div><p style={{fontSize:11,color:'#8A8D9C',fontWeight:700}}>Prazo</p><p style={{fontSize:13,fontWeight:600}}>📅 {sel.deadline}</p></div>}
+</div>
+            {sel.description&&<p style={{fontSize:14,color:'#5B5E6E',background:'#F3F4F8',borderRadius:8,padding:'10px 14px',marginBottom:14}}>{sel.description}</p>}
+            {sel.attachment_url&&<a href={sel.attachment_url} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:13,color:'#3454D1',fontWeight:600,marginBottom:14}}>📎 Ver anexo da tarefa</a>}
+
+            {sel.status==='Concluída'&&(
+<div style={{background:'#FDF3DD',border:'0.5px solid #E8AC3D',borderRadius:10,padding:'14px',marginBottom:16}}>
+<p style={{fontWeight:700,fontSize:13,color:'#8A5A0B',marginBottom:10}}>⏳ Validação pendente</p>
+<textarea style={{marginBottom:10,minHeight:50,resize:'vertical'}} value={note} onChange={e=>setNote(e.target.value)} placeholder="Observação (opcional, obrigatória se reprovar)..."/>
+<div style={{display:'flex',gap:8}}>
+<button style={{padding:'7px 16px',borderRadius:8,border:'none',background:'#1D7A34',color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={()=>{validate(sel.id,true,note);setNote('')}}>✓ Aprovar e finalizar</button>
+<button style={{padding:'7px 16px',borderRadius:8,border:'0.5px solid #E1E3EC',background:'#fff',cursor:'pointer'}} onClick={()=>{if(!note.trim())return alert('Escreva o motivo da reprovação.');validate(sel.id,false,note);setNote('')}}>✗ Reprovar</button>
+</div>
+</div>
+            )}
+
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',marginBottom:8}}>Atualizar situação</p>
+<div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18}}>
+              {STATUSES.map(st2=>{const on=sel.status===st2;const c=SC[st2];return(
+<button key={st2} onClick={()=>updStatus(sel.id,st2)} style={{padding:'7px 16px',borderRadius:99,fontSize:13,fontWeight:600,cursor:'pointer',background:on?c.bg:'#F3F4F8',color:on?c.text:'#8A8D9C',border:`1.5px solid ${on?c.border:'#E1E3EC'}`}}>{on&&'✓ '}{st2}</button>
+              )})}
+</div>
+
+<div style={{borderTop:'0.5px solid #E1E3EC',paddingTop:14}}>
+<p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💬 Comentários</p>
+              {comments.map(c=>(
+<div key={c.id} style={{background:'#F3F4F8',borderRadius:8,padding:'8px 12px',marginBottom:8}}>
+<p style={{fontSize:11,color:'#8A8D9C',marginBottom:2}}>{c.author} · {c.date}</p>
+                  {c.text&&<p style={{fontSize:13}}>{c.text}</p>}
+                  {c.attachment_url&&<a href={c.attachment_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#3454D1',fontWeight:600}}>📎 Ver anexo</a>}
+</div>
+              ))}
+<textarea spellCheck="true" lang="pt-BR" style={{marginTop:6,minHeight:60,resize:'vertical'}} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escreva um comentário..."/>
+<input type="file" accept="image/*,.pdf" style={{marginTop:6}} onChange={e=>setCommentFile(e.target.files[0]||null)}/>
+              {commentFile&&<p style={{fontSize:12,color:'#5B5E6E',marginTop:4}}>📎 {commentFile.name}</p>}
+<div style={{display:'flex',justifyContent:'space-between',marginTop:8}}>
+<button style={{padding:'7px 16px',borderRadius:8,border:'none',background:sector.color,color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={async()=>{
+                  let attachment_url=null;
+                  if(commentFile)attachment_url=await uploadFile(commentFile);
+                  if(!comment.trim()&&!attachment_url)return;
+                  await addComment(sel.id,comment,attachment_url);
+                  setComment('');setCommentFile(null);
+                }}>Enviar</button>
+<button style={{padding:'7px 16px',borderRadius:8,border:'0.5px solid #F09595',background:'#fff',color:'#A32D2D',cursor:'pointer'}} onClick={()=>delTask(sel.id)}>Excluir tarefa</button>
+</div>
+</div>
+</div>
+</div>
+      )}
+</div>
+  );
+}
+
+/* ── TELA: Gerenciar usuários (somente admin) ─────────────────────── */
+function UsersAdminScreen({users,onBack,onLogout,addUser,updateUser,deleteUser}){
+  // sectors agora é {setorId:'operador'|'gestor'}. role só guarda 'admin' (acesso total) ou 'user' (sem uso direto).
+  const blank={id:null,username:'',password:'',name:'',role:'user',sectors:{}};
+  const [form,setForm]=useState(blank),[err,setErr]=useState('');
+  const editing=!!form.id;
+  const isAdmin=form.role==='admin';
+  // marca/desmarca um setor. Ao marcar, entra como 'operador' por padrão (pode trocar pra 'gestor' no dropdown).
+  const toggleSector=id=>setForm(f=>{
+    const s={...f.sectors};
+    if(s[id])delete s[id]; else s[id]='operador';
+    return{...f,sectors:s};
+  });
+  const setSectorRole=(id,cargo)=>setForm(f=>({...f,sectors:{...f.sectors,[id]:cargo}}));
+  const startEdit=u=>setForm({id:u.id,username:u.username,password:u.password,name:u.name,role:u.role==='admin'?'admin':'user',sectors:parseSectorRoles(u.sectors)});
+  const save=()=>{
+    if(!form.username.trim()||!form.password.trim()||!form.name.trim()){setErr('Preencha usuário, senha e nome.');return}
+    setErr('');
+    if(editing)updateUser(form.id,form); else addUser(form);
+    setForm(blank);
+  };
+  return(
+<div style={{minHeight:'100vh'}}>
+<div style={{background:'#161A2E',padding:'0 16px',display:'flex',alignItems:'center',justifyContent:'space-between',height:60}}>
+<div style={{display:'flex',alignItems:'center',gap:12}}>
+<button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
+<span style={{color:'#fff',fontWeight:700,fontSize:15}}>⚙️ Gerenciar usuários</span>
+</div>
+<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+</div>
+<div style={{maxWidth:760,margin:'0 auto',padding:'24px 16px'}}>
+<div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:20,marginBottom:20}}>
+<p style={{fontWeight:700,marginBottom:14}}>{editing?'Editar usuário':'Novo usuário'}</p>
+          {err&&<div style={{fontSize:13,color:'#9A3412',background:'#FBEAE4',borderRadius:8,padding:'9px 12px',marginBottom:12}}>{err}</div>}
+<div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+<div style={{flex:1,minWidth:140}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Nome</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Nome de exibição"/></div>
+<div style={{flex:1,minWidth:120}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Cargo</label>
+<select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
+<option value="user">Usuário (cargo definido por setor abaixo)</option>
+<option value="admin">Administrador</option>
+</select>
+</div>
+</div>
+<div style={{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+<div style={{flex:1,minWidth:140}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Usuário (login)</label><input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value}))} placeholder="ex: joao.silva"/></div>
+<div style={{flex:1,minWidth:140}}><label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Senha</label><input value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} placeholder="senha"/></div>
+</div>
+<label style={{fontSize:11,color:'#8A8D9C',fontWeight:700,marginBottom:6,display:'block'}}>Setores e cargo em cada um {isAdmin&&'(administrador tem acesso total como gestor em todos automaticamente)'}</label>
+<div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16,opacity:isAdmin?.4:1,pointerEvents:isAdmin?'none':'auto'}}>
+            {SECTORS.map(s=>{const on=!!form.sectors[s.id];return(
+<div key={s.id} style={{display:'flex',alignItems:'center',gap:8}}>
+<button onClick={()=>toggleSector(s.id)} style={{padding:'6px 14px',borderRadius:99,fontSize:13,fontWeight:600,cursor:'pointer',background:on?s.bg:'#F3F4F8',color:on?s.color:'#8A8D9C',border:`1.5px solid ${on?s.color:'#E1E3EC'}`,minWidth:220,textAlign:'left'}}>{s.icon} {s.name}</button>
+              {on&&<select value={form.sectors[s.id]} onChange={e=>setSectorRole(s.id,e.target.value)} style={{padding:'6px 10px',borderRadius:8,border:'0.5px solid #E1E3EC',fontSize:13}}>
+<option value="operador">Operador</option>
+<option value="gestor">Gestor</option>
+</select>}
+</div>
+            )})}
+</div>
+<div style={{display:'flex',gap:10}}>
+<button style={{padding:'8px 18px',borderRadius:8,border:'none',background:'#161A2E',color:'#fff',fontWeight:700,cursor:'pointer'}} onClick={save}>{editing?'Salvar alterações':'Criar usuário'}</button>
+            {editing&&<button style={{padding:'8px 18px',borderRadius:8,border:'0.5px solid #E1E3EC',background:'#fff',cursor:'pointer'}} onClick={()=>setForm(blank)}>Cancelar edição</button>}
+</div>
+</div>
+
+<p style={{fontSize:11,color:'#8A8D9C',fontWeight:700,textTransform:'uppercase',marginBottom:10}}>Usuários cadastrados ({users.length})</p>
+        {users.map(u=>(
+<div key={u.id} style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
+<Avatar name={u.name} size={32}/>
+<div style={{flex:1}}>
+<p style={{fontWeight:700,fontSize:14}}>{u.name} <span style={{fontWeight:400,color:'#8A8D9C',fontSize:12}}>· {u.username}</span></p>
+<p style={{fontSize:12,color:'#8A8D9C'}}>{u.role==='admin'?'Administrador — todos os setores':(()=>{const sr=parseSectorRoles(u.sectors);const ids=Object.keys(sr);return ids.length?ids.map(id=>`${sectorOf(id)?.name||id}: ${sr[id]==='gestor'?'Gestor':'Operador'}`).join(' · '):'nenhum setor'})()}</p>
+</div>
+<button onClick={()=>startEdit(u)} style={{padding:'6px 12px',borderRadius:8,border:'0.5px solid #E1E3EC',background:'#fff',cursor:'pointer',fontSize:12}}>Editar</button>
+<button onClick={()=>deleteUser(u.id)} style={{padding:'6px 12px',borderRadius:8,border:'0.5px solid #F09595',background:'#fff',color:'#A32D2D',cursor:'pointer',fontSize:12}}>Excluir</button>
+</div>
+        ))}
+</div>
+</div>
+  );
+}
+
+/* ── APP PRINCIPAL ─────────────────────────────────────────────────── */
+function App(){
+  const [screen,setScreen]=useState('login');   // login | sectors | operator | manager | users-admin
+  const [currentUser,setCurrentUser]=useState(null);
+  const [activeSectorId,setActiveSectorId]=useState(null);
+  const [tasks,setTasks]=useState([]),[users,setUsers]=useState([]),[loading,setLoading]=useState(true);
+  const [taskId,setTaskId]=useState(null),[comments,setComments]=useState([]);
+  const ref=useRef(null);
+
+  const loadTasks=useCallback(async()=>{const{data,error}=await db.from('tasks').select('*').order('created_at',{ascending:false});if(!error)setTasks(data||[]);setLoading(false)},[]);
+  const loadUsers=useCallback(async()=>{const{data,error}=await db.from('users').select('*').order('name');if(!error)setUsers(data||[])},[]);
+  const loadComments=useCallback(async id=>{const{data}=await db.from('comments').select('*').eq('task_id',id).order('created_at',{ascending:true});setComments(data||[])},[]);
+
+  useEffect(()=>{
+    if(NOT_CONFIGURED)return;
+    loadTasks();loadUsers();
+    const ch=db.channel('rt-checklist')
+      .on('postgres_changes',{event:'*',schema:'public',table:'tasks'},loadTasks)
+      .on('postgres_changes',{event:'*',schema:'public',table:'users'},loadUsers)
+      .on('postgres_changes',{event:'*',schema:'public',table:'comments'},()=>{if(ref.current)loadComments(ref.current)})
+      .subscribe();
+    return()=>db.removeChannel(ch);
+  },[loadTasks,loadUsers,loadComments]);
+
+  useEffect(()=>{ref.current=taskId;taskId?loadComments(taskId):setComments([])},[taskId,loadComments]);
+
+  const addTask=async(sid,form)=>{await db.from('tasks').insert({sector:sid,title:form.title,member:JSON.stringify(form.members),priority:form.priority,channel:form.channel||null,deadline:form.deadline||null,description:form.description||null,status:'Pendente',attachment_url:form.attachment_url||null});await loadTasks()};
+  const delTask=async id=>{await db.from('tasks').delete().eq('id',id);setTaskId(null);await loadTasks()};
+  const updStatus=async(id,status)=>{await db.from('tasks').update({status,completed_at:status==='Concluída'?today():null}).eq('id',id);await loadTasks()};
+  const validate=async(id,approve,note)=>{
+    await db.from('tasks').update({status:approve?'Finalizada':'Em Andamento',validated_at:approve?today():null,review_note:note||null}).eq('id',id);
+    await loadTasks();setTaskId(null);
+  };
+  const addComment=async(id,text,attachment_url)=>{
+    if(!text?.trim()&&!attachment_url||!currentUser)return;
+    await db.from('comments').insert({task_id:id,author:currentUser.name,text:text||'',attachment_url:attachment_url||null});await loadComments(id);
+  };
+  const addUser=async form=>{await db.from('users').insert({username:form.username.trim(),password:form.password,name:form.name.trim(),role:form.role,sectors:JSON.stringify(form.sectors)});await loadUsers()};
+  const updateUser=async(id,form)=>{await db.from('users').update({username:form.username.trim(),password:form.password,name:form.name.trim(),role:form.role,sectors:JSON.stringify(form.sectors)}).eq('id',id);await loadUsers()};
+  const deleteUser=async id=>{await db.from('users').delete().eq('id',id);await loadUsers()};
+  const changeOwnPassword=async(newPass)=>{
+    await db.from('users').update({password:newPass}).eq('id',currentUser.id);
+    setCurrentUser(u=>({...u,password:newPass}));
+    await loadUsers();
+  };
+
+  const goSectors=()=>{setScreen('sectors');setActiveSectorId(null);setTaskId(null)};
+  const logout=()=>{setScreen('login');setCurrentUser(null);setActiveSectorId(null);setTaskId(null)};
+
+  if(NOT_CONFIGURED)return(
+<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:24,background:'#161A2E'}}>
+<div style={{background:'#fff',borderRadius:16,padding:32,maxWidth:480,textAlign:'left'}}>
+<p style={{fontSize:32,marginBottom:10}}>⚙️</p>
+<h2 style={{fontWeight:700,fontSize:19,marginBottom:10}}>Ainda falta conectar o banco de dados</h2>
+<p style={{fontSize:14,color:'#5B5E6E',marginBottom:14,lineHeight:1.6}}>Este arquivo ainda tem os textos de exemplo <code>COLE_AQUI_...</code> no lugar da URL e da chave do Supabase.</p>
+<p style={{fontSize:14,color:'#5B5E6E',lineHeight:1.6}}>Abra o <b>index.html</b> num editor de texto (Bloco de Notas, TextEdit ou VS Code — não pelo navegador), localize as linhas <code>SUPABASE_URL</code> e <code>SUPABASE_KEY</code> perto do topo do arquivo, cole os valores do seu projeto Supabase, salve e recarregue esta página.</p>
+</div>
+</div>
+  );
+
+  if(loading)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:'#8A8D9C'}}>Carregando…</div>;
+
+  if(screen==='login'||!currentUser)return<LoginScreen users={users} onLogin={u=>{setCurrentUser(u);setScreen('sectors')}}/>;
+
+  if(screen==='sectors')return<SectorGridScreen currentUser={currentUser}
+      onPickSector={id=>{setActiveSectorId(id);setScreen(roleInSector(currentUser,id)==='gestor'?'manager':'operator')}}
+      onManageUsers={()=>setScreen('users-admin')}
+      onLogout={logout} onChangePassword={changeOwnPassword}/>;
+
+  if(screen==='users-admin'){
+    if(currentUser.role!=='admin')return null;
+    return<UsersAdminScreen users={users} onBack={goSectors} onLogout={logout}
+      addUser={addUser} updateUser={updateUser} deleteUser={deleteUser}/>;
+  }
+
+  if(screen==='operator'){
+    const sec=sectorOf(activeSectorId);
+    if(!sec)return null;
+    return<OperatorScreen sector={sec} currentUser={currentUser} users={users} tasks={tasks} onBack={goSectors}
+      onLogout={logout} updStatus={updStatus} addComment={addComment}
+      comments={comments} taskId={taskId} setTaskId={setTaskId} onChangePassword={changeOwnPassword}/>;
+  }
+
+  if(screen==='manager'){
+    const sec=sectorOf(activeSectorId);
+    if(!sec)return null;
+    return<ManagerScreen sector={sec} currentUser={currentUser} users={users} tasks={tasks} onBack={goSectors}
+      onLogout={logout} addTask={addTask} delTask={delTask} updStatus={updStatus} validate={validate}
+      addComment={addComment} comments={comments} taskId={taskId} setTaskId={setTaskId} onChangePassword={changeOwnPassword}/>;
+  }
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
