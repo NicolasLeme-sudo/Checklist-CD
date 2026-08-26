@@ -106,6 +106,8 @@ const getAssignees=t=>parseJsonArray(t.member);              // array de usernam
 const userSectors=u=>Object.keys(parseSectorRoles(u.sectors)); // ids dos setores que o usuário acessa
 const roleInSector=(u,sectorId)=>u.role==='admin'?'gestor':(parseSectorRoles(u.sectors)[sectorId]||null);
 const allowedSectorIdsOf=u=>u.role==='admin'?SECTORS.map(s=>s.id):userSectors(u);
+// quem pode editar um comentário: o autor original, ou qualquer admin
+const canEditComment=(currentUser,c)=>currentUser.role==='admin'||c.author===currentUser.name;
 const nameOf=(users,username)=>{const u=users.find(x=>x.username===username);return u?u.name:username};
 const avatarColor=n=>{const cols=['#3454D1','#8E44AD','#0E8F6E','#C8790A','#D1345B','#2E9BB0','#6C63A6'];let h=0;for(let i=0;i<(n||'').length;i++)h=n.charCodeAt(i)+((h<<5)-h);return cols[Math.abs(h)%cols.length]};
 
@@ -224,7 +226,8 @@ function SectorGridScreen({currentUser,onPickSector,onManageUsers,onLogout,onCha
 }
 
 /* ── TELA: Operador (vê e atualiza só as próprias tarefas) ───────── */
-function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatus,addComment,comments,taskId,setTaskId,onChangePassword}){
+function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatus,addComment,updComment,comments,taskId,setTaskId,onChangePassword}){
+  const [editingCommentId,setEditingCommentId]=useState(null),[editCommentText,setEditCommentText]=useState('');
   const mine=tasks.filter(t=>t.sector===sector.id&&getAssignees(t).includes(currentUser.username)&&(t.status==='Pendente'||t.status==='Em Andamento'));
   const [fPriority,setFPriority]=useState('__ALL__'),[fChannel,setFChannel]=useState('__ALL__');
   const [sortField,setSortField]=useState(null),[sortDir,setSortDir]=useState('asc');
@@ -337,9 +340,23 @@ function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatu
 <p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💬 Comentários</p>
               {comments.map(c=>(
 <div key={c.id} style={{background:'#F3F4F8',borderRadius:8,padding:'8px 12px',marginBottom:8}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
 <p style={{fontSize:11,color:'#8A8D9C',marginBottom:2}}>{c.author} · {c.date}</p>
+                    {canEditComment(currentUser,c)&&editingCommentId!==c.id&&
+<button onClick={()=>{setEditingCommentId(c.id);setEditCommentText(c.text||'')}} style={{background:'none',border:'none',color:'#3454D1',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>✎ Editar</button>}
+</div>
+                  {editingCommentId===c.id?(
+<div>
+<textarea style={{minHeight:50,resize:'vertical',width:'100%'}} value={editCommentText} onChange={e=>setEditCommentText(e.target.value)}/>
+<div style={{display:'flex',gap:8,marginTop:4}}>
+<button onClick={async()=>{await updComment(c.id,editCommentText);setEditingCommentId(null)}} style={{padding:'4px 12px',borderRadius:6,border:'none',background:sector.color,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+<button onClick={()=>setEditingCommentId(null)} style={{padding:'4px 12px',borderRadius:6,border:'0.5px solid #E1E3EC',background:'#fff',color:'#8A8D9C',fontSize:12,cursor:'pointer'}}>Cancelar</button>
+</div>
+</div>
+                  ):(<>
                   {c.text&&<p style={{fontSize:13}}>{c.text}</p>}
                   {c.attachment_url&&<a href={c.attachment_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#3454D1',fontWeight:600}}>📎 Ver anexo</a>}
+                  </>)}
 </div>
               ))}
 <textarea style={{marginTop:6,minHeight:60,resize:'vertical'}} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escreva um comentário..."/>
@@ -362,8 +379,9 @@ function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatu
 
 /* ── TELA: Gestor / Admin (gestão completa de 1 setor por vez) ────── */
 function ManagerScreen({sector,currentUser,users,tasks,onBack,onLogout,
-  addTask,delTask,updStatus,validate,addComment,comments,taskId,setTaskId,onChangePassword}){
+  addTask,delTask,updStatus,validate,addComment,updComment,comments,taskId,setTaskId,onChangePassword}){
   const [fMember,setFMember]=useState('Todos'),[fPriority,setFPriority]=useState('__ALL__'),[fChannel,setFChannel]=useState('__ALL__'),[fStatus,setFStatus]=useState(new Set(STATUSES));
+  const [editingCommentId,setEditingCommentId]=useState(null),[editCommentText,setEditCommentText]=useState('');
   const [sortField,setSortField]=useState(null),[sortDir,setSortDir]=useState('asc'); // sortField: null | 'deadline' | 'priority'
   const [showForm,setShowForm]=useState(false),[form,setForm]=useState({});
   const [comment,setComment]=useState(''),[note,setNote]=useState(''),[commentFile,setCommentFile]=useState(null),[showValidation,setShowValidation]=useState(false);
@@ -587,9 +605,23 @@ function ManagerScreen({sector,currentUser,users,tasks,onBack,onLogout,
 <p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💬 Comentários</p>
               {comments.map(c=>(
 <div key={c.id} style={{background:'#F3F4F8',borderRadius:8,padding:'8px 12px',marginBottom:8}}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
 <p style={{fontSize:11,color:'#8A8D9C',marginBottom:2}}>{c.author} · {c.date}</p>
+                    {canEditComment(currentUser,c)&&editingCommentId!==c.id&&
+<button onClick={()=>{setEditingCommentId(c.id);setEditCommentText(c.text||'')}} style={{background:'none',border:'none',color:'#3454D1',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>✎ Editar</button>}
+</div>
+                  {editingCommentId===c.id?(
+<div>
+<textarea spellCheck="true" lang="pt-BR" style={{minHeight:50,resize:'vertical',width:'100%'}} value={editCommentText} onChange={e=>setEditCommentText(e.target.value)}/>
+<div style={{display:'flex',gap:8,marginTop:4}}>
+<button onClick={async()=>{await updComment(c.id,editCommentText);setEditingCommentId(null)}} style={{padding:'4px 12px',borderRadius:6,border:'none',background:sector.color,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+<button onClick={()=>setEditingCommentId(null)} style={{padding:'4px 12px',borderRadius:6,border:'0.5px solid #E1E3EC',background:'#fff',color:'#8A8D9C',fontSize:12,cursor:'pointer'}}>Cancelar</button>
+</div>
+</div>
+                  ):(<>
                   {c.text&&<p style={{fontSize:13}}>{c.text}</p>}
                   {c.attachment_url&&<a href={c.attachment_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#3454D1',fontWeight:600}}>📎 Ver anexo</a>}
+                  </>)}
 </div>
               ))}
 <textarea spellCheck="true" lang="pt-BR" style={{marginTop:6,minHeight:60,resize:'vertical'}} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escreva um comentário..."/>
@@ -732,6 +764,10 @@ function App(){
     if(!text?.trim()&&!attachment_url||!currentUser)return;
     await db.from('comments').insert({task_id:id,author:currentUser.name,text:text||'',attachment_url:attachment_url||null});await loadComments(id);
   };
+  const updComment=async(commentId,text)=>{
+    if(!text?.trim())return;
+    await db.from('comments').update({text}).eq('id',commentId);await loadComments(taskId);
+  };
   const addUser=async form=>{await db.from('users').insert({username:form.username.trim(),password:form.password,name:form.name.trim(),role:form.role,sectors:JSON.stringify(form.sectors)});await loadUsers()};
   const updateUser=async(id,form)=>{await db.from('users').update({username:form.username.trim(),password:form.password,name:form.name.trim(),role:form.role,sectors:JSON.stringify(form.sectors)}).eq('id',id);await loadUsers()};
   const deleteUser=async id=>{await db.from('users').delete().eq('id',id);await loadUsers()};
@@ -774,7 +810,7 @@ function App(){
     const sec=sectorOf(activeSectorId);
     if(!sec)return null;
     return<OperatorScreen sector={sec} currentUser={currentUser} users={users} tasks={tasks} onBack={goSectors}
-      onLogout={logout} updStatus={updStatus} addComment={addComment}
+      onLogout={logout} updStatus={updStatus} addComment={addComment} updComment={updComment}
       comments={comments} taskId={taskId} setTaskId={setTaskId} onChangePassword={changeOwnPassword}/>;
   }
 
@@ -783,7 +819,7 @@ function App(){
     if(!sec)return null;
     return<ManagerScreen sector={sec} currentUser={currentUser} users={users} tasks={tasks} onBack={goSectors}
       onLogout={logout} addTask={addTask} delTask={delTask} updStatus={updStatus} validate={validate}
-      addComment={addComment} comments={comments} taskId={taskId} setTaskId={setTaskId} onChangePassword={changeOwnPassword}/>;
+      addComment={addComment} updComment={updComment} comments={comments} taskId={taskId} setTaskId={setTaskId} onChangePassword={changeOwnPassword}/>;
   }
 
   return null;
