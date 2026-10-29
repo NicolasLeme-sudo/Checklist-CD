@@ -18,6 +18,14 @@
     .card-hover{transition:box-shadow .2s,transform .2s}
     .card-hover:hover{box-shadow:0 10px 24px rgba(20,25,60,.12);transform:translateY(-2px)}
     ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#D3D6E0;border-radius:3px}
+
+/* ---------- Barra de ações do topo (padrão dos reports: perfil · tela cheia · tema · sair) ---------- */
+.vb-acoes{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vb-perfil{font-size:12px;font-weight:600;color:inherit;opacity:.75;white-space:nowrap;margin-right:4px}
+.vb-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;cursor:pointer;background:rgba(127,140,170,.14);border:1px solid rgba(127,140,170,.35);color:inherit;font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap}
+.vb-btn:hover{background:rgba(127,140,170,.26)}
+.vb-btn:focus-visible{outline:2px solid #297ADF;outline-offset:2px}
+.vb-btn[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -122,6 +130,14 @@ const Badge=({c,children})=>(
 );
 
 /* ── Botão + modal: troca de senha pelo próprio usuário ───────────── */
+// Botão de tela cheia (padrão dos reports); some se o navegador não tiver tela cheia.
+function TelaCheiaButton(){
+  const d=document, temTC=!!(d.fullscreenEnabled||d.webkitFullscreenEnabled);
+  const [on,setOn]=useState(!!(d.fullscreenElement||d.webkitFullscreenElement));
+  useEffect(()=>{const f=()=>setOn(!!(d.fullscreenElement||d.webkitFullscreenElement));d.addEventListener('fullscreenchange',f);d.addEventListener('webkitfullscreenchange',f);return()=>{d.removeEventListener('fullscreenchange',f);d.removeEventListener('webkitfullscreenchange',f);};},[]);
+  if(!temTC)return null;
+  return <button className="vb-btn" onClick={()=>window.vbTelaCheia()} title="Tela cheia (Esc para sair)">{on?'⛶ Sair da tela cheia':'⛶ Tela cheia'}</button>;
+}
 function ChangePasswordButton({currentUser,onChangePassword}){
   const [open,setOpen]=useState(false);
   const [cur,setCur]=useState(''),[np,setNp]=useState(''),[np2,setNp2]=useState(''),[err,setErr]=useState(''),[ok,setOk]=useState(false);
@@ -136,7 +152,7 @@ function ChangePasswordButton({currentUser,onChangePassword}){
     setTimeout(()=>{setOpen(false);reset()},1200);
   };
   return(<>
-<button onClick={()=>{setOpen(true);reset()}} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>🔑 Alterar senha</button>
+<button className="vb-btn" onClick={()=>{setOpen(true);reset()}}>🔑 Alterar senha</button>
       {open&&(
 <div style={{position:'fixed',inset:0,background:'rgba(10,12,25,.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false)}}>
 <div style={{background:'#fff',borderRadius:16,padding:24,width:'100%',maxWidth:360}}>
@@ -200,11 +216,12 @@ function SectorGridScreen({currentUser,onPickSector,onManageUsers,onLogout,onCha
 <div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
 <div style={{background:'#161A2E',padding:'0 16px',height:60,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
 <span style={{color:'#fff',fontWeight:700,fontSize:15}}>Checklist de Setores</span>
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · {ROLES[currentUser.role]?.label||currentUser.role}</span>
-          {currentUser.role==='admin'&&<button onClick={onManageUsers} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>⚙️ Gerenciar usuários</button>}
+<div className="vb-acoes" style={{color:'#fff'}}>
+<span className="vb-perfil">{currentUser.name} · {ROLES[currentUser.role]?.label||currentUser.role}</span>
+          {currentUser.role==='admin'&&<button className="vb-btn" onClick={onManageUsers}>⚙️ Gerenciar usuários</button>}
 <ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
-<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+<TelaCheiaButton/>
+<button className="vb-btn" onClick={onLogout}>🚪 Sair</button>
 </div>
 </div>
 <div style={{flex:1,maxWidth:760,margin:'0 auto',padding:'40px 16px',width:'100%'}}>
@@ -268,10 +285,11 @@ function OperatorScreen({sector,currentUser,users,tasks,onBack,onLogout,updStatu
 <button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
 <span style={{color:'#fff',fontWeight:700,fontSize:15}}>{sector.icon} {sector.name}</span>
 </div>
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · Operador</span>
+<div className="vb-acoes" style={{color:'#fff'}}>
+<span className="vb-perfil">{currentUser.name} · Operador</span>
 <ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
-<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+<TelaCheiaButton/>
+<button className="vb-btn" onClick={onLogout}>🚪 Sair</button>
 </div>
 </div>
 <div style={{maxWidth:720,margin:'0 auto',padding:'24px 16px'}}>
@@ -431,10 +449,11 @@ function ManagerScreen({sector,currentUser,users,tasks,onBack,onLogout,
 <button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
 <span style={{color:'#fff',fontWeight:700,fontSize:15}}>{sector.icon} {sector.name}</span>
 </div>
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<span style={{color:'rgba(255,255,255,.75)',fontSize:13}}>{currentUser.name} · {currentUser.role==='admin'?'Administrador':(roleInSector(currentUser,sector.id)==='gestor'?'Gestor':'Operador')}</span>
+<div className="vb-acoes" style={{color:'#fff'}}>
+<span className="vb-perfil">{currentUser.name} · {currentUser.role==='admin'?'Administrador':(roleInSector(currentUser,sector.id)==='gestor'?'Gestor':'Operador')}</span>
 <ChangePasswordButton currentUser={currentUser} onChangePassword={onChangePassword}/>
-<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+<TelaCheiaButton/>
+<button className="vb-btn" onClick={onLogout}>🚪 Sair</button>
 </div>
 </div>
 
@@ -674,7 +693,10 @@ function UsersAdminScreen({users,onBack,onLogout,addUser,updateUser,deleteUser})
 <button onClick={onBack} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:13}}>← Setores</button>
 <span style={{color:'#fff',fontWeight:700,fontSize:15}}>⚙️ Gerenciar usuários</span>
 </div>
-<button onClick={onLogout} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,.3)',color:'#fff',padding:'5px 12px',borderRadius:8,cursor:'pointer',fontSize:12}}>Sair</button>
+<div className="vb-acoes" style={{color:'#fff'}}>
+<TelaCheiaButton/>
+<button className="vb-btn" onClick={onLogout}>🚪 Sair</button>
+</div>
 </div>
 <div style={{maxWidth:760,margin:'0 auto',padding:'24px 16px'}}>
 <div style={{background:'#fff',border:'0.5px solid #E1E3EC',borderRadius:12,padding:20,marginBottom:20}}>
@@ -827,6 +849,34 @@ function App(){
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<script>
+/* ---------- Barra de ações do topo: tela cheia e rótulo do tema (padrão dos reports) ---------- */
+function vbTelaCheia(){
+  var d=document, el=d.documentElement;
+  if(!(d.fullscreenElement||d.webkitFullscreenElement)){
+    var f=el.requestFullscreen||el.webkitRequestFullscreen;
+    if(f){ var p=f.call(el); if(p&&p.catch) p.catch(function(){}); }
+  } else {
+    var x=d.exitFullscreen||d.webkitExitFullscreen; if(x) x.call(d);
+  }
+}
+function vbAtualizaTelaCheia(){
+  var b=document.getElementById('btnTelaCheia'), d=document; if(!b) return;
+  if(!(d.fullscreenEnabled||d.webkitFullscreenEnabled)){ b.hidden=true; return; }   // navegador sem tela cheia: some o botão
+  b.textContent=(d.fullscreenElement||d.webkitFullscreenElement)?'⛶ Sair da tela cheia':'⛶ Tela cheia';
+}
+// O botão de tema mostra o tema atual ("🌙 Tema Escuro" / "☀️ Tema Claro").
+function vbAtualizaTema(){
+  var b=document.getElementById('btnTema'); if(!b||b.querySelector('#toggleLabel')) return;
+  var h=document.documentElement, claro=h.getAttribute('data-tema')==='claro'||h.getAttribute('data-theme')==='light';
+  b.textContent=claro?'☀️ Tema Claro':'🌙 Tema Escuro';
+}
+document.addEventListener('fullscreenchange',vbAtualizaTelaCheia);
+document.addEventListener('webkitfullscreenchange',vbAtualizaTelaCheia);
+if(window.MutationObserver) new MutationObserver(vbAtualizaTema).observe(document.documentElement,{attributes:true,attributeFilter:['data-tema','data-theme']});
+vbAtualizaTelaCheia(); vbAtualizaTema();
+document.addEventListener('DOMContentLoaded',function(){ vbAtualizaTelaCheia(); vbAtualizaTema(); });
 </script>
 </body>
 </html>
